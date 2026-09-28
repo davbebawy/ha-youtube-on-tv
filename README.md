@@ -159,10 +159,19 @@ python3.14 -m venv .venv
 
 The Home Assistant test harness only runs on Linux and macOS. On Windows, use WSL.
 
-`scripts/lounge_probe.py` is a standalone tool that prints the Lounge events of a TV. It's useful for checking how a new device behaves:
+Two standalone tools help when a device behaves differently. Both only read, and neither prints the screen id.
+
+`scripts/dial_scan.py` shows which devices publish DIAL on the network, where, and whether their YouTube app exposes a screen id. Run it with YouTube open on the device:
 
 ```bash
-.venv/bin/python scripts/lounge_probe.py --host 192.168.1.50 --seconds 300
+python scripts/dial_scan.py                      # search the network
+python scripts/dial_scan.py --host 192.168.1.50  # try known addresses on one device
+```
+
+`scripts/lounge_probe.py` prints the Lounge events a TV sends, which is how the quirks documented above were found. `--debug` also logs events the library doesn't handle:
+
+```bash
+.venv/bin/python scripts/lounge_probe.py --host 192.168.1.50 --seconds 300 --debug
 ```
 
 It assumes a Samsung DIAL endpoint (port 8080).
