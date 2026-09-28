@@ -11,6 +11,8 @@ It connects to the TV the same way the YouTube phone app does when you cast (You
 
 > **Not affiliated with Google or YouTube.** This uses an undocumented protocol that YouTube may change at any time.
 
+Questions, ideas and reports of how it behaves on other TVs are welcome in the [Home Assistant community thread](https://community.home-assistant.io/t/youtube-on-tv-see-and-control-what-the-youtube-app-on-your-tv-is-playing/1026146). Bugs are best filed as [issues](https://github.com/jorgediez/ha-youtube-on-tv/issues).
+
 ## Features
 
 - **Media player** entity with:
@@ -30,7 +32,18 @@ It connects to the TV the same way the YouTube phone app does when you cast (You
 
 ## Supported devices
 
-Any device whose YouTube app supports "Link with TV code" should work. It's developed against a **Samsung Tizen** TV (Neo QLED QN900F). LG webOS, Android/Google TV, Chromecast with Google TV, Fire TV and Roku use the same protocol, but they haven't been tested yet.
+Any device whose YouTube app supports "Link with TV code" should work.
+
+| Device | Reported | Thanks to |
+|---|---|---|
+| **Samsung Tizen** (Neo QLED QN900F) | Developed against it: discovery, IP address and TV code all work | |
+| **Samsung Tizen** (other model) | Works, including Skip ad | [Nik_Fiend](https://community.home-assistant.io/u/nik_fiend) |
+| **Onn 4K Android TV box** | Works, including Skip ad. Added with a TV code; discovery didn't find it | [j_quadrifrons](https://community.home-assistant.io/u/j_quadrifrons) |
+| **NVIDIA Shield TV** | Playback, title, channel and thumbnail all shown. Added with a TV code; adding by IP address didn't work. Ads untested (YouTube Premium) | [kahilzinger](https://community.home-assistant.io/u/kahilzinger) |
+
+LG webOS, Chromecast with Google TV, Fire TV and Roku use the same protocol but haven't been reported on yet.
+
+On Android TV devices, use the TV code if discovery or the IP address doesn't find them. If you can, run `scripts/dial_scan.py` (see [Development](#development)) and share the output in the [community thread](https://community.home-assistant.io/t/youtube-on-tv-see-and-control-what-the-youtube-app-on-your-tv-is-playing/1026146), so local discovery can be improved for those devices.
 
 YouTube Kids is not supported.
 
@@ -113,7 +126,9 @@ It works while YouTube is open, including switching from a video that's already 
 
 Turning the media player on or off opens and closes YouTube on the TV the same way. Both need the TV's address, so they aren't available for TVs added with a TV code.
 
-## Skipping ads automatically
+## Ads
+
+Skip an ad as soon as the TV allows it. The button is unavailable until then, so becoming available is the trigger:
 
 ```yaml
 automation:
@@ -126,6 +141,28 @@ automation:
       - action: button.press
         target:
           entity_id: button.youtube_on_samsung_neo_qled_skip_ad
+```
+
+Mute the TV while an ad plays, which also covers ads that can't be skipped. Volume belongs to the TV, so this uses the TV's own media player entity, not this integration's. Thanks to [Nik_Fiend](https://community.home-assistant.io/u/nik_fiend/summary) for [the idea](https://community.home-assistant.io/t/youtube-on-tv-see-and-control-what-the-youtube-app-on-your-tv-is-playing/1026146/8):
+
+```yaml
+automation:
+  - alias: Mute YouTube ads
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.youtube_on_samsung_neo_qled_ad_playing
+        to: "on"
+        id: mute
+      - trigger: state
+        entity_id: binary_sensor.youtube_on_samsung_neo_qled_ad_playing
+        to: "off"
+        id: unmute
+    actions:
+      - action: media_player.volume_mute
+        target:
+          entity_id: media_player.samsung_neo_qled   # your TV, not youtube_on_*
+        data:
+          is_volume_muted: "{{ trigger.id == 'mute' }}"
 ```
 
 ## Troubleshooting
@@ -180,6 +217,7 @@ It assumes a Samsung DIAL endpoint (port 8080).
 
 - [pyytlounge](https://github.com/FabioGNR/pyytlounge) by FabioGNR, which implements the Lounge protocol
 - [iSponsorBlockTV](https://github.com/dmunozv04/iSponsorBlockTV), whose work on discovery through DIAL made pairing without a code possible
+- Everyone testing it on their own hardware in the [community thread](https://community.home-assistant.io/t/youtube-on-tv-see-and-control-what-the-youtube-app-on-your-tv-is-playing/1026146), which is how devices beyond one Samsung TV got covered
 
 ## License
 
