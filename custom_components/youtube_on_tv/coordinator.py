@@ -83,6 +83,8 @@ MAX_AUTH_FAILURES = 3
 # A subscribe call shorter than this is followed by a pause, to avoid a
 # tight loop if the server keeps ending requests immediately.
 MIN_SUBSCRIBE_SECONDS = 1.0
+# Ad states that mean an ad is on screen. Other labels arrive as an ad ends.
+_AD_RUNNING_STATES = (State.Playing, State.Advertisement, State.Starting)
 
 
 class PlayerStatus(StrEnum):
@@ -538,10 +540,16 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
     def handle_ad_state(self, ad_state: State, skip_enabled: bool) -> None:
         """Handle an ad state change."""
         self._last_event_at = dt_util.utcnow()
-        if ad_state is State.Playing:
+        if ad_state is State.AdSkipped:
+            new = replace(self._state, ad_playing=False, ad_skippable=False)
+        elif ad_state in _AD_RUNNING_STATES:
+            # Whether the skip button is up is reported separately from the ad
+            # state, so it is trusted as sent.
             new = replace(self._state, ad_playing=True, ad_skippable=skip_enabled)
         else:
-            new = replace(self._state, ad_skippable=False)
+            # Trailing events as an ad finishes arrive after playback has
+            # resumed, so they must not turn "ad playing" back on.
+            new = replace(self._state, ad_skippable=skip_enabled)
         self._update(new, immediate=True)
 
     @callback

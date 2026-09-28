@@ -11,7 +11,7 @@ from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
-from pyytlounge import NowPlayingEvent, State
+from pyytlounge import AdStateEvent, NowPlayingEvent, State
 
 from custom_components.youtube_on_tv.const import (
     APP_STATE_INTERVAL,
@@ -45,6 +45,7 @@ PREFIX = "youtube_on_samsung_neo_qled"
 CONNECTED_ID = f"binary_sensor.{PREFIX}_youtube_session"
 APP_STATE_ID = f"sensor.{PREFIX}_app_state"
 SKIP_AD_ID = f"button.{PREFIX}_skip_ad"
+AD_SENSOR_ID = f"binary_sensor.{PREFIX}_ad_playing"
 PLAYER_ID = f"media_player.{PREFIX}"
 VIDEO_ID = "Yeke1krzPFM"
 
@@ -320,3 +321,79 @@ async def test_no_turn_on_without_dial(
     ]
     assert not features & MediaPlayerEntityFeature.TURN_ON
     assert not features & MediaPlayerEntityFeature.TURN_OFF
+
+
+@pytest.mark.parametrize("ad_state", ["1", "1081", "3", "0", "99"])
+async def test_skip_ad_available_whatever_the_ad_state(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+    ad_state: str,
+) -> None:
+    """TVs label the ad state differently; the skip flag is what counts."""
+    coordinator = mock_config_entry.runtime_data
+    coordinator.handle_now_playing(
+        NowPlayingEvent(
+            {"videoId": VIDEO_ID, "state": "1081", "currentTime": "0", "duration": "6"}
+        )
+    )
+    await init_integration.listener.ad_state_changed(
+        AdStateEvent({"adState": ad_state, "currentTime": "5", "isSkipEnabled": "true"})
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+    assert hass.states.get(SKIP_AD_ID).state != STATE_UNAVAILABLE
+
+
+async def test_skip_ad_unavailable_after_skipping(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A skipped ad turns the button and the sensor off."""
+    coordinator = mock_config_entry.runtime_data
+    coordinator.handle_now_playing(
+        NowPlayingEvent(
+            {"videoId": VIDEO_ID, "state": "1081", "currentTime": "0", "duration": "6"}
+        )
+    )
+    coordinator.handle_ad_state(State.Playing, True)
+    await hass.async_block_till_done()
+    assert hass.states.get(SKIP_AD_ID).state != STATE_UNAVAILABLE
+
+    coordinator.handle_ad_state(State.AdSkipped, False)
+    await hass.async_block_till_done()
+    assert hass.states.get(SKIP_AD_ID).state == STATE_UNAVAILABLE
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_OFF
+
+
+async def test_trailing_ad_event_does_not_flip_sensor_back(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """An ad's closing event arrives after playback resumes; it must be ignored."""
+    coordinator = mock_config_entry.runtime_data
+    coordinator.handle_now_playing(
+        NowPlayingEvent(
+            {"videoId": VIDEO_ID, "state": "1081", "currentTime": "0", "duration": "6"}
+        )
+    )
+    coordinator.handle_ad_state(State.Playing, True)
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+
+    # The video comes back ...
+    coordinator.handle_playback_state(State.Playing, 0, 237)
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_OFF
+    off_at = hass.states.get(AD_SENSOR_ID).last_changed
+
+    # ... and the TV reports the ad finishing just after.
+    coordinator.handle_ad_state(State.Buffering, False)
+    coordinator.handle_ad_state(State.Stopped, False)
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_OFF
+    assert hass.states.get(AD_SENSOR_ID).last_changed == off_at
+    assert hass.states.get(SKIP_AD_ID).state == STATE_UNAVAILABLE
