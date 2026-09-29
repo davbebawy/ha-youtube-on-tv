@@ -168,17 +168,43 @@ class _Listener(EventListener):
         self._coordinator = coordinator
 
     async def now_playing_changed(self, event: NowPlayingEvent) -> None:
+        LOGGER.debug(
+            "nowPlaying: video=%s state=%s position=%s duration=%s",
+            event.video_id,
+            event.state.name,
+            event.current_time,
+            event.duration,
+        )
         self._coordinator.handle_now_playing(event)
 
     async def playback_state_changed(self, event: PlaybackStateEvent) -> None:
+        LOGGER.debug(
+            "onStateChange: state=%s position=%s duration=%s",
+            event.state.name,
+            event.current_time,
+            event.duration,
+        )
         self._coordinator.handle_playback_state(
             event.state, event.current_time, event.duration
         )
 
     async def ad_state_changed(self, event: AdStateEvent) -> None:
+        LOGGER.debug(
+            "onAdStateChange: state=%s skip_enabled=%s position=%s",
+            event.ad_state.name,
+            event.is_skip_enabled,
+            event.current_time,
+        )
         self._coordinator.handle_ad_state(event.ad_state, event.is_skip_enabled)
 
     async def ad_playing_changed(self, event: AdPlayingEvent) -> None:
+        LOGGER.debug(
+            "adPlaying: state=%s skip_enabled=%s skippable=%s bumper=%s",
+            event.ad_state.name,
+            event.is_skip_enabled,
+            event.is_skippable,
+            event.is_bumper,
+        )
         self._coordinator.handle_ad_state(event.ad_state, event.is_skip_enabled)
 
     async def disconnected(self, event: DisconnectedEvent) -> None:
@@ -751,6 +777,13 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
                 position_updated_at=self.data.position_updated_at,
             )
             return
+        if self.data.ad_playing != self._state.ad_playing:
+            LOGGER.debug(
+                "ad playing: %s -> %s (player %s)",
+                self.data.ad_playing,
+                self._state.ad_playing,
+                self._state.status,
+            )
         self.async_set_updated_data(self._state)
 
     @callback
