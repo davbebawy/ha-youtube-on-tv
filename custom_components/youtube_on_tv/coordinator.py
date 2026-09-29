@@ -245,6 +245,9 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         # Working state; published to self.data immediately or after settling.
         self._state = TvState()
         self._app_running: bool | None = None
+        # Some TVs may only label ads in the playback state; that is trusted
+        # until one sends a real ad event.
+        self._seen_ad_event = False
         # Last YouTube app state reported by DIAL; None if the TV didn't answer.
         self.app_state: str | None = None
         self._unsub_settle: CALLBACK_TYPE | None = None
@@ -523,12 +526,15 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         self._last_event_at = dt_util.utcnow()
         current = self._state
         if state is State.Advertisement:
-            # Position and duration refer to the ad, not the video.
+            # Position and duration refer to the ad, not the video. Whether an
+            # ad is on screen comes from the ad events: a TV sends one last
+            # "Advertisement" state just after an ad is skipped, which would
+            # otherwise turn the ad sensor back on for a second.
             self._update(
                 replace(
                     current,
                     status=PlayerStatus.PLAYING,
-                    ad_playing=True,
+                    ad_playing=current.ad_playing or not self._seen_ad_event,
                     position=None,
                     duration=None,
                     position_updated_at=None,
@@ -566,6 +572,7 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
     def handle_ad_state(self, ad_state: State, skip_enabled: bool) -> None:
         """Handle an ad state change."""
         self._last_event_at = dt_util.utcnow()
+        self._seen_ad_event = True
         if ad_state is State.AdSkipped:
             new = replace(self._state, ad_playing=False, ad_skippable=False)
         elif ad_state in _AD_RUNNING_STATES:

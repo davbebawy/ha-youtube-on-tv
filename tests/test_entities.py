@@ -11,7 +11,7 @@ from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
-from pyytlounge import AdStateEvent, NowPlayingEvent, State
+from pyytlounge import AdPlayingEvent, AdStateEvent, NowPlayingEvent, State
 
 from custom_components.youtube_on_tv.const import (
     APP_STATE_INTERVAL,
@@ -35,7 +35,7 @@ from homeassistant.const import (
     STATE_ON,
     STATE_UNAVAILABLE,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 
@@ -397,3 +397,107 @@ async def test_trailing_ad_event_does_not_flip_sensor_back(
     assert hass.states.get(AD_SENSOR_ID).state == STATE_OFF
     assert hass.states.get(AD_SENSOR_ID).last_changed == off_at
     assert hass.states.get(SKIP_AD_ID).state == STATE_UNAVAILABLE
+
+
+async def test_ad_pod_from_a_real_tv(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Replay a captured ad break: one On, one Off, nothing in between.
+
+    The TV sends a last "Advertisement" playback state 4 ms after the ad is
+    skipped, carrying the video's duration, which used to turn the sensor
+    back on for a second.
+    """
+    coordinator = mock_config_entry.runtime_data
+    listener = init_integration.listener
+    states: list[str] = []
+
+    @callback
+    def record(event) -> None:
+        """Record state changes, ignoring attribute-only updates."""
+        if event.data["entity_id"] != AD_SENSOR_ID:
+            return
+        old_state = event.data["old_state"]
+        new_state = event.data["new_state"]
+        if old_state is None or old_state.state != new_state.state:
+            states.append(new_state.state)
+
+    hass.bus.async_listen("state_changed", record)
+
+    def ad_playing(state: str, skippable: str = "false") -> AdPlayingEvent:
+        return AdPlayingEvent(
+            {
+                "adState": state,
+                "isSkipEnabled": skippable,
+                "isSkippable": "true",
+                "isBumper": "false",
+                "adTitle": "",
+                "clickThroughUrl": "",
+                "adSystem": "",
+                "adNextParams": "",
+                "contentVideoId": VIDEO_ID,
+                "duration": "15",
+                "currentTime": "0",
+            }
+        )
+
+    def ad_state(state: str, skippable: str = "false") -> AdStateEvent:
+        return AdStateEvent(
+            {"adState": state, "currentTime": "0", "isSkipEnabled": skippable}
+        )
+
+    coordinator.handle_now_playing(
+        NowPlayingEvent(
+            {"videoId": VIDEO_ID, "state": "3", "currentTime": "0", "duration": "0"}
+        )
+    )
+    # A bumper, then a skippable ad.
+    await listener.ad_playing_changed(ad_playing("-1"))
+    coordinator.handle_playback_state(State.Advertisement, 0.07, 6.041)
+    await listener.ad_state_changed(ad_state("1"))
+    coordinator.handle_playback_state(State.Advertisement, 0.0, 15.0)
+    await listener.ad_state_changed(ad_state("0"))
+    await listener.ad_playing_changed(ad_playing("1"))
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+
+    # Skip becomes available, then the ad is skipped.
+    await listener.ad_state_changed(ad_state("1", "true"))
+    await hass.async_block_till_done()
+    assert hass.states.get(SKIP_AD_ID).state != STATE_UNAVAILABLE
+
+    await listener.ad_state_changed(ad_state("1082"))
+    # Four milliseconds later the TV sends one more "Advertisement" state,
+    # carrying the video's duration, followed by the ad buffering away.
+    coordinator.handle_playback_state(State.Advertisement, 0.0, 225.0)
+    await listener.ad_state_changed(ad_state("0"))
+    coordinator.handle_playback_state(State.Stopped, 0.0, 224.861)
+    coordinator.handle_playback_state(State.Playing, 0.091, 224.861)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_OFF
+    assert hass.states.get(SKIP_AD_ID).state == STATE_UNAVAILABLE
+    assert states == [STATE_ON, STATE_OFF]
+
+
+async def test_ad_state_only_in_playback_state(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """A TV that never sends ad events still reports ads."""
+    coordinator = mock_config_entry.runtime_data
+    coordinator.handle_now_playing(
+        NowPlayingEvent(
+            {"videoId": VIDEO_ID, "state": "1", "currentTime": "5", "duration": "200"}
+        )
+    )
+    coordinator.handle_playback_state(State.Advertisement, 0.0, 15.0)
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_ON
+
+    coordinator.handle_playback_state(State.Playing, 0.0, 200)
+    await hass.async_block_till_done()
+    assert hass.states.get(AD_SENSOR_ID).state == STATE_OFF
