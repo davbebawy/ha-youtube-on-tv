@@ -49,6 +49,7 @@ from .const import (
     DOMAIN,
     LOGGER,
     LOUNGE_DEVICE_NAME,
+    OUTAGE_WARNING_DELAY,
     POSITION_OVERRUN,
     POSITION_TOLERANCE,
     RECONNECT_MAX_DELAY,
@@ -248,6 +249,9 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         # Some TVs may only label ads in the playback state; that is trusted
         # until one sends a real ad event.
         self._seen_ad_event = False
+        # When the session went down, and whether that was reported.
+        self._offline_since: datetime | None = None
+        self._offline_warned = False
         # Last YouTube app state reported by DIAL; None if the TV didn't answer.
         self.app_state: str | None = None
         self._unsub_settle: CALLBACK_TYPE | None = None
@@ -379,6 +383,7 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
                 auth_failures = 0
                 LOGGER.debug("Lounge connection error: %s", err)
                 self._set_available(False)
+                self._warn_if_offline_for_long(err)
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, RECONNECT_MAX_DELAY)
             else:
@@ -405,10 +410,36 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
 
     @callback
     def _set_available(self, available: bool) -> None:
+        if available:
+            if self._offline_warned:
+                LOGGER.warning(
+                    "Reconnected to %s after %s",
+                    self.config_entry.title,
+                    dt_util.utcnow() - (self._offline_since or dt_util.utcnow()),
+                )
+            self._offline_since = None
+            self._offline_warned = False
+        elif self._offline_since is None:
+            self._offline_since = dt_util.utcnow()
         if self.last_update_success == available:
             return
         self.last_update_success = available
         self.async_update_listeners()
+
+    @callback
+    def _warn_if_offline_for_long(self, error: Exception) -> None:
+        """Report a session that has stayed down, once."""
+        if self._offline_warned or self._offline_since is None:
+            return
+        if dt_util.utcnow() - self._offline_since < OUTAGE_WARNING_DELAY:
+            return
+        self._offline_warned = True
+        LOGGER.warning(
+            "Not connected to %s since %s, still retrying: %s",
+            self.config_entry.title,
+            self._offline_since.isoformat(timespec="seconds"),
+            error or type(error).__name__,
+        )
 
     async def _async_check_app_state(self, _now: datetime | None = None) -> None:
         """Poll DIAL to detect the YouTube app closing or the TV turning off."""

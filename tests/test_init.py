@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 import json
+import logging
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import aiohttp
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
-from custom_components.youtube_on_tv.const import CONF_MODEL, CONF_SCREEN_ID, DOMAIN
+from custom_components.youtube_on_tv.const import (
+    CONF_MODEL,
+    CONF_SCREEN_ID,
+    DOMAIN,
+)
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
@@ -220,3 +227,35 @@ async def test_device_named_by_youtube(
     (device,) = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
     assert device.name == "YouTube on TV"
     assert hass.states.get("media_player.youtube_on_tv") is not None
+
+
+async def test_long_outage_is_reported(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A session that stays down is worth one warning, and so is its return."""
+    caplog.set_level(logging.WARNING, logger="custom_components.youtube_on_tv")
+    init_integration.connect.side_effect = TimeoutError("offline")
+    init_integration.drop_connection()
+    await wait_for(lambda: _player_unavailable(hass))
+
+    # A brief drop says nothing: the threshold hasn't passed.
+    assert "still retrying" not in caplog.text
+
+    with patch(
+        "custom_components.youtube_on_tv.coordinator.OUTAGE_WARNING_DELAY",
+        timedelta(0),
+    ):
+        await wait_for(lambda: "still retrying" in caplog.text)
+        assert caplog.text.count("still retrying") == 1
+
+        init_integration.connect.side_effect = init_integration._connect
+        await wait_for(lambda: "Reconnected to" in caplog.text)
+    assert "Reconnected to Samsung Neo QLED" in caplog.text
+
+
+def _player_unavailable(hass: HomeAssistant) -> bool:
+    """Return True once the media player has gone unavailable."""
+    state = hass.states.get("media_player.youtube_on_samsung_neo_qled")
+    return state is not None and state.state == "unavailable"

@@ -27,6 +27,10 @@ POSITION_TOLERANCE: Final = 2.0
 RECONNECT_MIN_DELAY: Final = 5
 RECONNECT_MAX_DELAY: Final = 300
 
+# A session that stays down this long is worth one warning in the log, so a
+# silent gap can be explained afterwards without debug logging.
+OUTAGE_WARNING_DELAY: Final = timedelta(minutes=5)
+
 # How often the TV's DIAL endpoint is polled to detect the app closing or the
 # TV going to standby, which the Lounge session doesn't always report.
 APP_STATE_INTERVAL: Final = timedelta(seconds=30)

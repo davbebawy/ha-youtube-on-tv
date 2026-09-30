@@ -169,6 +169,7 @@ automation:
 
 - **Re-authentication requested:** YouTube occasionally rotates a TV's screen id (it did so for all TVs in April 2026). Open YouTube on the TV, then select **Reconfigure** on the integration in *Settings → Devices & services*. TVs added with a TV code ask for a new code.
 - **Not discovered:** discovery needs Home Assistant and the TV on the same network segment, with YouTube having been opened on the TV. Add it by IP address or TV code instead.
+- **Entities went unavailable for a while:** the integration keeps retrying on its own, waiting a little longer after each attempt, up to five minutes, so these usually clear up by themselves. The **YouTube session** sensor's history shows exactly when the connection dropped and returned, and a session that stays down for more than five minutes is logged as a warning with the reason.
 - **Debug logs:** add this to `configuration.yaml`:
 
   ```yaml
