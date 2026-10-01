@@ -7,7 +7,8 @@ Steps:
 
 The screenId and lounge token are credentials, so they are never printed.
 
-Usage: python scripts/lounge_probe.py --host TV_IP [--seconds 120]
+Usage: python scripts/lounge_probe.py --host TV_IP [--seconds 120] [--debug]
+       python scripts/lounge_probe.py --pair-code 123456789012   (no DIAL needed)
 """
 
 import argparse
@@ -33,19 +34,54 @@ from pyytlounge import (
     YtLoungeApi,
 )
 
-DIAL_PORT = 8080
 DEVICE_NAME = "HA Lounge Probe"
+
+# YouTube app URLs of common DIAL servers. Use --app-url for anything else;
+# scripts/dial_scan.py reports what a device actually publishes.
+KNOWN_APP_URLS = (
+    "http://{host}:8080/ws/app/YouTube",  # Samsung Tizen
+    "http://{host}:8008/apps/YouTube",  # Chromecast, Google/Android TV
+    "http://{host}:8060/dial/YouTube",  # Roku
+    "http://{host}:36866/apps/YouTube",  # LG webOS
+)
 
 
 def log(msg: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
-async def get_screen_id(session: aiohttp.ClientSession, host: str) -> str:
-    url = f"http://{host}:{DIAL_PORT}/ws/app/YouTube"
-    async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-        resp.raise_for_status()
-        body = await resp.text()
+async def get_screen_id(
+    session: aiohttp.ClientSession, host: str, app_url: str | None
+) -> str:
+    urls = [app_url] if app_url else [u.format(host=host) for u in KNOWN_APP_URLS]
+    body = None
+    missing = False
+    for url in urls:
+        try:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status != 200:
+                    log(f"DIAL: {url} returned HTTP {resp.status}")
+                    missing = missing or resp.status == 404
+                    continue
+                body = await resp.text()
+        except (aiohttp.ClientError, TimeoutError) as err:
+            log(f"DIAL: {url}: {err}")
+            continue
+        log(f"DIAL: using {url}")
+        break
+
+    if body is None and missing:
+        raise RuntimeError(
+            "The device's DIAL server has no YouTube app, so there is no screen "
+            "id to read. Run again with --pair-code and the code from the TV "
+            "(YouTube > Settings > Link with TV code)."
+        )
+    if body is None:
+        raise RuntimeError(
+            "No YouTube app found over DIAL. Open YouTube on the device, or pass "
+            "--app-url with the address scripts/dial_scan.py reports."
+        )
+
     state = re.search(r"<state>(.*?)</state>", body)
     log(f"DIAL: YouTube app state = {state.group(1) if state else '?'}")
     match = re.search(r"<screenId>(.*?)</screenId>", body)
@@ -128,13 +164,33 @@ class PrintListener(EventListener):
         log(f"DISCONNECTED {vars(event)}")
 
 
-async def listen(api: YtLoungeApi, screen_id: str) -> None:
+async def listen(
+    api: YtLoungeApi, screen_id: str | None, pair_code: str | None = None
+) -> None:
     """Keep the lounge session alive: refresh auth, reconnect, re-subscribe."""
     while True:
         if not api.linked():
-            log("Linking with screenId ...")
-            if not await api.pair_with_screen_id(screen_id):
-                raise RuntimeError("get_lounge_token_batch did not return a token")
+            if screen_id:
+                log("Linking with screenId ...")
+                linked = await api.pair_with_screen_id(screen_id)
+            else:
+                log("Pairing with the TV code ...")
+                try:
+                    linked = await api.pair(pair_code)
+                except (
+                    aiohttp.ClientResponseError,
+                    KeyError,
+                    TypeError,
+                    ValueError,
+                ) as err:
+                    raise RuntimeError(
+                        "The TV code was not accepted. Codes expire after a "
+                        "few minutes; get a fresh one from the TV."
+                    ) from err
+                # Codes are single use; reconnect with the screen id it gave.
+                screen_id = api.auth.screen_id
+            if not linked:
+                raise RuntimeError("YouTube did not return a lounge token")
             log("Linked (lounge token obtained)")
         if not api.connected():
             log("Connecting ...")
@@ -149,8 +205,16 @@ async def listen(api: YtLoungeApi, screen_id: str) -> None:
 
 async def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", required=True, help="TV IP address or hostname")
+    parser.add_argument("--host", help="TV IP address or hostname")
+    parser.add_argument(
+        "--pair-code",
+        help="TV code, for devices whose DIAL server has no YouTube app",
+    )
     parser.add_argument("--seconds", type=int, default=120)
+    parser.add_argument(
+        "--app-url",
+        help="YouTube DIAL app URL, if the device isn't at a known address",
+    )
     parser.add_argument(
         "--debug",
         action="store_true",
@@ -164,18 +228,32 @@ async def main() -> int:
     lib_logger.setLevel(logging.DEBUG if args.debug else logging.WARNING)
     logging.basicConfig(format="[lib] %(levelname)s %(message)s")
 
+    if not args.host and not args.pair_code:
+        parser.error("pass --host, or --pair-code for a device without DIAL")
+
     async with aiohttp.ClientSession() as session:
-        screen_id = await get_screen_id(session, args.host)
-        log(f"DIAL: screenId found ({len(screen_id)} chars)")
+        screen_id = None
+        if not args.pair_code:
+            try:
+                screen_id = await get_screen_id(session, args.host, args.app_url)
+            except RuntimeError as err:
+                log(str(err))
+                return 1
+            log(f"DIAL: screenId found ({len(screen_id)} chars)")
 
         async with YtLoungeApi(
             DEVICE_NAME, PrintListener(TitleCache(session)), lib_logger
         ) as api:
             log(f"Listening for {args.seconds}s — play/pause/seek from your phone now")
             try:
-                await asyncio.wait_for(listen(api, screen_id), timeout=args.seconds)
+                await asyncio.wait_for(
+                    listen(api, screen_id, args.pair_code), timeout=args.seconds
+                )
             except TimeoutError:
                 log("Time is up")
+            except RuntimeError as err:
+                log(str(err))
+                return 1
             finally:
                 if api.connected():
                     await api.disconnect()

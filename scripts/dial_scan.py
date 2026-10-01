@@ -13,12 +13,16 @@ import argparse
 import re
 import socket
 import sys
-from urllib.parse import urljoin, urlparse
+from urllib.error import HTTPError
+from urllib.parse import quote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 DIAL_ST = "urn:dial-multiscreen-org:service:dial:1"
 ORIGIN = "https://www.youtube.com"
 TIMEOUT = 5
+
+# DIAL names the YouTube app might be registered under.
+APP_NAMES = ("YouTube", "youtube")
 
 # Where DIAL servers are known to publish their device description.
 KNOWN_DESCRIPTION_URLS = (
@@ -87,22 +91,40 @@ def report(location: str) -> None:
         print("  not a DIAL server (no Application-URL header)")
         return
 
-    youtube_url = urljoin(
-        app_url if app_url.endswith("/") else f"{app_url}/", "YouTube"
-    )
-    try:
-        status, _headers, app = get(youtube_url)
-    except Exception as err:
-        print(f"  YouTube app info failed: {youtube_url}: {err}")
+    base = app_url if app_url.endswith("/") else f"{app_url}/"
+    missing = False
+    for name in APP_NAMES:
+        youtube_url = urljoin(base, quote(name))
+        try:
+            status, _headers, app = get(youtube_url)
+        except HTTPError as err:
+            print(f"  {youtube_url}: HTTP {err.code}")
+            missing = missing or err.code == 404
+            continue
+        except Exception as err:
+            print(f"  {youtube_url}: {err}")
+            continue
+
+        screen_id = tag(app, "screenId")
+        found = f"yes, {len(screen_id)} chars" if screen_id else "NOT PUBLISHED"
+        print(f"  YouTube app url: {youtube_url} (HTTP {status})")
+        print(f"  app state:       {tag(app, 'state')}")
+        print(f"  screen id:       {found}")
+        if not screen_id:
+            print("  -> open YouTube on the device and run this again")
         return
-    screen_id = tag(app, "screenId")
-    print(f"  YouTube app url: {youtube_url} (HTTP {status})")
-    print(f"  app state:       {tag(app, 'state')}")
-    print(
-        f"  screen id:       {'yes, ' + str(len(screen_id)) + ' chars' if screen_id else 'NOT PUBLISHED'}"
-    )
-    if not screen_id:
-        print("  -> open YouTube on the device and run this again")
+
+    if missing:
+        print(
+            "  -> the DIAL server answered but has no YouTube app. With YouTube\n"
+            "     open on the device, that means this device never exposes it,\n"
+            "     so add it in Home Assistant with a TV code."
+        )
+    else:
+        print(
+            "  -> no YouTube app answered. Devices often register it only while\n"
+            "     it is running, so open YouTube on the device and try again."
+        )
 
 
 def main() -> int:

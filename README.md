@@ -44,7 +44,9 @@ Any device whose YouTube app supports "Link with TV code" should work.
 
 LG webOS, Chromecast with Google TV, Fire TV and Roku use the same protocol but haven't been reported on yet.
 
-On Android TV devices, use the TV code if discovery or the IP address doesn't find them. If you can, run `scripts/dial_scan.py` (see [Development](#development)) and share the output in the [community thread](https://community.home-assistant.io/t/youtube-on-tv-see-and-control-what-the-youtube-app-on-your-tv-is-playing/1026146), so local discovery can be improved for those devices.
+**Android TV devices need a TV code.** A Xiaomi Mi Box was checked with `scripts/dial_scan.py`: it publishes DIAL, but its DIAL server has no YouTube app registered even while YouTube is playing, so there's no screen id to discover and no local address to use. The Shield TV and Onn box behaved the same way in setup. Everything works normally once added with a code, except the features that need the TV's address: the **App state** sensor, turning YouTube on and off, and opening YouTube to play a video while it's closed.
+
+If you have a device not listed here, running `scripts/dial_scan.py` (see [Development](#development)) and posting the output in the [community thread](https://community.home-assistant.io/t/youtube-on-tv-see-and-control-what-the-youtube-app-on-your-tv-is-playing/1026146) helps map which devices support local discovery.
 
 YouTube Kids is not supported.
 
@@ -227,7 +229,7 @@ python scripts/dial_scan.py --host 192.168.1.50  # try known addresses on one de
 .venv/bin/python scripts/lounge_probe.py --host 192.168.1.50 --seconds 300 --debug
 ```
 
-It assumes a Samsung DIAL endpoint (port 8080).
+It tries the DIAL addresses of common devices; pass `--app-url` with whatever `dial_scan.py` reports for anything else.
 
 ## Credits
 
