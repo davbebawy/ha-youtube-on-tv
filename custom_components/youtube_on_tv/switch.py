@@ -29,6 +29,7 @@ async def async_setup_entry(
         [
             YouTubeOnTvAutoplaySwitch(coordinator),
             YouTubeOnTvSubtitlesSwitch(coordinator),
+            YouTubeOnTvSessionSwitch(coordinator),
         ]
     )
 
@@ -111,3 +112,41 @@ class YouTubeOnTvSubtitlesSwitch(YouTubeOnTvEntity, SwitchEntity):
             self.coordinator.api.set_closed_captions, code, video_id
         )
         self.coordinator.note_subtitles(code, name)
+
+
+class YouTubeOnTvSessionSwitch(YouTubeOnTvEntity, SwitchEntity):
+    """Whether the TV sees Home Assistant as a connected remote.
+
+    The TV refuses to play Shorts while a remote is connected, so this turns
+    the session off without removing the integration. The choice is kept
+    across restarts.
+    """
+
+    _attr_translation_key = "session"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: YouTubeOnTvCoordinator) -> None:
+        """Initialize the switch."""
+        super().__init__(coordinator, "session")
+
+    @property
+    def available(self) -> bool:
+        """Stay available: this is what turns the session back on."""
+        return True
+
+    @property
+    def is_on(self) -> bool:
+        """Return True while the session is meant to be connected."""
+        return self.coordinator.session_enabled
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Connect to the TV again."""
+        await self._async_set_enabled(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Disconnect, so the TV plays Shorts again."""
+        await self._async_set_enabled(False)
+
+    async def _async_set_enabled(self, enabled: bool) -> None:
+        await self.coordinator.async_set_session_enabled(enabled)
+        self.async_write_ha_state()

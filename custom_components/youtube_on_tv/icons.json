@@ -54,6 +54,12 @@
         "state": {
           "off": "mdi:subtitles-outline"
         }
+      },
+      "session": {
+        "default": "mdi:cast-connected",
+        "state": {
+          "off": "mdi:cast-off"
+        }
       }
     },
     "select": {

@@ -16,6 +16,11 @@ class YouTubeOnTvEntity(CoordinatorEntity[YouTubeOnTvCoordinator]):
 
     _attr_has_entity_name = True
 
+    @property
+    def available(self) -> bool:
+        """Return True while the session is connected."""
+        return self.coordinator.available
+
     def __init__(self, coordinator: YouTubeOnTvCoordinator, key: str) -> None:
         """Initialize the entity."""
         super().__init__(coordinator)

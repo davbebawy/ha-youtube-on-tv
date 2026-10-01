@@ -131,6 +131,9 @@
       },
       "subtitles": {
         "name": "Subtitles"
+      },
+      "session": {
+        "name": "Remote session"
       }
     },
     "select": {

@@ -12,6 +12,9 @@ CONF_APP_URL: Final = "app_url"
 CONF_PAIRING_CODE: Final = "pairing_code"
 CONF_MANUFACTURER: Final = "manufacturer"
 CONF_MODEL: Final = "model"
+# Entry option: whether the TV should see Home Assistant as a connected
+# remote. A connected remote stops the TV playing Shorts.
+CONF_SESSION_ENABLED: Final = "session_enabled"
 
 # Name shown on the TV in the list of connected devices.
 LOUNGE_DEVICE_NAME: Final = "Home Assistant"

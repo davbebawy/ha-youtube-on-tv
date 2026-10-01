@@ -7,7 +7,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
+from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+)
 from pyytlounge import (
     AutoplayModeChangedEvent,
     AutoplayUpNextEvent,
@@ -17,7 +20,7 @@ from pyytlounge import (
     SubtitlesTrackEvent,
 )
 
-from custom_components.youtube_on_tv.const import SETTLE_DELAY
+from custom_components.youtube_on_tv.const import DOMAIN, SETTLE_DELAY
 from custom_components.youtube_on_tv.coordinator import _LoungeApi
 from homeassistant.components.select import (
     ATTR_OPTION,
@@ -41,7 +44,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 
-from .conftest import FakeLounge
+from .conftest import ENTRY_DATA, FakeLounge
 
 PREFIX = "youtube_on_samsung_neo_qled"
 AUTOPLAY_ID = f"switch.{PREFIX}_autoplay"
@@ -49,6 +52,7 @@ SPEED_ID = f"select.{PREFIX}_playback_speed"
 UP_NEXT_ID = f"sensor.{PREFIX}_up_next"
 SUBTITLES_ID = f"sensor.{PREFIX}_subtitles"
 SUBTITLES_SWITCH_ID = f"switch.{PREFIX}_subtitles"
+SESSION_SWITCH_ID = f"switch.{PREFIX}_remote_session"
 QUALITY_ID = f"sensor.{PREFIX}_video_quality"
 PLAYER_ID = f"media_player.{PREFIX}"
 VIDEO_ID = "Yeke1krzPFM"
@@ -444,3 +448,64 @@ async def test_subtitles_switch_errors(
         )
     assert err.value.translation_key == "no_video"
     init_integration.set_closed_captions.assert_not_awaited()
+
+
+async def test_remote_session_switch(
+    hass: HomeAssistant,
+    init_integration: FakeLounge,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Turning the session off disconnects, so the TV can play Shorts."""
+    assert hass.states.get(SESSION_SWITCH_ID).state == STATE_ON
+    assert hass.states.get(PLAYER_ID).state != STATE_UNAVAILABLE
+
+    await hass.services.async_call(
+        SWITCH_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: SESSION_SWITCH_ID},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    init_integration.disconnect.assert_awaited_once()
+    assert hass.states.get(SESSION_SWITCH_ID).state == STATE_OFF
+    assert hass.states.get(PLAYER_ID).state == STATE_UNAVAILABLE
+    # The choice is remembered, so a restart doesn't reconnect silently.
+    assert mock_config_entry.options["session_enabled"] is False
+
+    init_integration.subscribed.clear()
+    await hass.services.async_call(
+        SWITCH_DOMAIN,
+        SERVICE_TURN_ON,
+        {ATTR_ENTITY_ID: SESSION_SWITCH_ID},
+        blocking=True,
+    )
+    await init_integration.subscribed.wait()
+    await hass.async_block_till_done()
+
+    assert hass.states.get(SESSION_SWITCH_ID).state == STATE_ON
+    assert hass.states.get(PLAYER_ID).state != STATE_UNAVAILABLE
+    assert mock_config_entry.options["session_enabled"] is True
+
+
+async def test_session_disabled_at_startup(
+    hass: HomeAssistant,
+    mock_lounge: list[FakeLounge],
+    mock_app_state: AsyncMock,
+) -> None:
+    """A TV left disconnected stays disconnected after a restart."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Samsung Neo QLED",
+        unique_id="uuid:disabled",
+        data=dict(ENTRY_DATA),
+        options={"session_enabled": False},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    api = mock_lounge[0]
+    api.connect.assert_not_awaited()
+    assert hass.states.get(SESSION_SWITCH_ID).state == STATE_OFF
+    assert hass.states.get(PLAYER_ID).state == STATE_UNAVAILABLE

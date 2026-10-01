@@ -46,6 +46,7 @@ from .const import (
     APP_STATE_INTERVAL,
     CONF_APP_URL,
     CONF_SCREEN_ID,
+    CONF_SESSION_ENABLED,
     DOMAIN,
     LOGGER,
     LOUNGE_DEVICE_NAME,
@@ -283,6 +284,24 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         """Return the TV's host, if known."""
         return self.config_entry.data.get(CONF_HOST)
 
+    @property
+    def available(self) -> bool:
+        """Return whether the entities have live data.
+
+        Publishing state marks the coordinator successful, so a disabled
+        session is tracked separately rather than through that flag.
+        """
+        return self.session_enabled and self.last_update_success
+
+    @property
+    def session_enabled(self) -> bool:
+        """Return whether the TV should see Home Assistant as connected.
+
+        A connected remote stops the TV playing Shorts, so this can be turned
+        off without removing the integration.
+        """
+        return self.config_entry.options.get(CONF_SESSION_ENABLED, True)
+
     async def async_start(self) -> None:
         """Link to the screen and start listening in the background.
 
@@ -290,19 +309,20 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         the entry unloads or its setup fails.
         """
         await self.api.__aenter__()
-        try:
-            await self._async_link()
-        except _CONNECTION_ERRORS as err:
-            raise ConfigEntryNotReady(
-                translation_domain=DOMAIN,
-                translation_key="cannot_connect",
-                translation_placeholders={"error": str(err)},
-            ) from err
-
         entry = self.config_entry
-        self._task = entry.async_create_background_task(
-            self.hass, self._async_run(), f"{DOMAIN} lounge {entry.entry_id}"
-        )
+        if self.session_enabled:
+            try:
+                await self._async_link()
+            except _CONNECTION_ERRORS as err:
+                raise ConfigEntryNotReady(
+                    translation_domain=DOMAIN,
+                    translation_key="cannot_connect",
+                    translation_placeholders={"error": str(err)},
+                ) from err
+            self._start_listening()
+        else:
+            self._set_available(False)
+
         entry.async_on_unload(
             async_track_time_interval(
                 self.hass, self._async_check_stale, STALE_CHECK_INTERVAL
@@ -316,13 +336,16 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
             )
             await self._async_check_app_state()
 
-    async def async_shutdown(self) -> None:
-        """Disconnect from the screen."""
-        await super().async_shutdown()
-        self._cancel_settle()
-        if self._unsub_stale_reply is not None:
-            self._unsub_stale_reply()
-            self._unsub_stale_reply = None
+    @callback
+    def _start_listening(self) -> None:
+        """Run the session in the background until it is stopped."""
+        entry = self.config_entry
+        self._task = entry.async_create_background_task(
+            self.hass, self._async_run(), f"{DOMAIN} lounge {entry.entry_id}"
+        )
+
+    async def _async_stop_listening(self) -> None:
+        """End the session, so the TV no longer sees a connected remote."""
         if self._task is not None:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
@@ -335,7 +358,33 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
                     await self.api.disconnect()
             except (*_CONNECTION_ERRORS, NotConnectedException) as err:
                 LOGGER.debug("Error disconnecting: %s", err)
-        await self.api.close()
+
+    async def async_set_session_enabled(self, enabled: bool) -> None:
+        """Connect to or disconnect from the TV, and remember the choice."""
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            options={**self.config_entry.options, CONF_SESSION_ENABLED: enabled},
+        )
+        if enabled:
+            self._start_listening()
+            return
+
+        await self._async_stop_listening()
+        self._cancel_settle()
+        self._state = TvState()
+        self.async_set_updated_data(self._state)
+        self._set_available(False)
+
+    async def async_shutdown(self) -> None:
+        """Disconnect from the screen."""
+        await super().async_shutdown()
+        self._cancel_settle()
+        if self._unsub_stale_reply is not None:
+            self._unsub_stale_reply()
+            self._unsub_stale_reply = None
+        await self._async_stop_listening()
+        if self.api.session is not None and not self.api.session.closed:
+            await self.api.close()
 
     # Connection handling
 
@@ -399,9 +448,11 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
                     raise NotConnectedException("Lounge refused the connection")
                 return  # token expired; relink on next iteration
             LOGGER.debug("Connected to %s", self.config_entry.title)
-            self._set_available(True)
             await self.api.get_now_playing()
 
+        # Also covers resuming a session that was turned off and on again,
+        # where the client is still connected and no connect is needed.
+        self._set_available(True)
         started = time.monotonic()
         await self.api.subscribe()
         if time.monotonic() - started < MIN_SUBSCRIBE_SECONDS:
@@ -730,6 +781,8 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         forever. A TV with an active player answers "what's playing" at once.
         """
         state = self.data
+        if not self.session_enabled:
+            return
         if state.status not in (PlayerStatus.PLAYING, PlayerStatus.BUFFERING):
             return
         if _position_overrun(state):

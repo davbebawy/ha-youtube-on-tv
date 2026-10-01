@@ -110,7 +110,7 @@ class FakeLounge:
         self.connect = AsyncMock(side_effect=self._connect)
         self.subscribe = AsyncMock(side_effect=self._subscribe)
         self.get_now_playing = AsyncMock(return_value=True)
-        self.disconnect = AsyncMock(return_value=True)
+        self.disconnect = AsyncMock(side_effect=self._disconnect)
         self.close = AsyncMock(side_effect=self._close)
         self.play = AsyncMock(return_value=True)
         self.pause = AsyncMock(return_value=True)
@@ -148,6 +148,11 @@ class FakeLounge:
 
     async def _connect(self) -> bool:
         self._connected = True
+        return True
+
+    async def _disconnect(self) -> bool:
+        self._connected = False
+        self._stop.set()
         return True
 
     async def _subscribe(self) -> None:

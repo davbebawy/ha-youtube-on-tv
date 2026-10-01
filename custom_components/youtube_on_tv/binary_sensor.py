@@ -74,4 +74,4 @@ class YouTubeOnTvConnectedSensor(YouTubeOnTvEntity, BinarySensorEntity):
     @property
     def is_on(self) -> bool:
         """Return True while connected."""
-        return self.coordinator.last_update_success
+        return self.coordinator.available

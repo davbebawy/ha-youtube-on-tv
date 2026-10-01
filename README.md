@@ -24,6 +24,7 @@ Questions, ideas and reports of how it behaves on other TVs are welcome in the [
 - **Ad playing** binary sensor, with a `skippable` attribute
 - **Skip ad** button, available as soon as the ad can be skipped
 - **Autoplay** and **Subtitles** switches, and a **Playback speed** select
+- **Remote session** switch, to disconnect so the TV can play Shorts
 - **Video quality** sensor
 - **Up next** and **Subtitles** sensors
 - Diagnostic entities for the connection and the YouTube app state
@@ -85,8 +86,21 @@ Each TV becomes its own device, named **YouTube on _TV name_**, so it's easy to 
 | `sensor.youtube_on_samsung_neo_qled_subtitles` | Subtitles language, or `off`; kept across videos. Attributes: `language_code`, `track_name`, `kind` (`asr` means auto-generated) and the TV's display `style` |
 | `sensor.youtube_on_samsung_neo_qled_video_quality` | Resolution being played, e.g. 1080, with an `available_levels` attribute |
 | `sensor.youtube_on_samsung_neo_qled_app_state` | Diagnostic, disabled by default: `running`, `stopped`, `hidden` or `unreachable`, as reported by the TV. Only for TVs added by discovery or IP address. |
+| `switch.youtube_on_samsung_neo_qled_remote_session` | Whether the TV sees Home Assistant as a connected remote (config). Turn it off to watch Shorts; see below. |
 
 The TV will list the connection as a linked device named "Home Assistant".
+
+## Shorts
+
+The TV won't play Shorts while any device is connected to it as a remote — a phone that's casting does the same thing. Since this integration stays connected, the TV shows "you can't watch Shorts while a device is connected" and its own disconnect button doesn't help, because the integration reconnects right away.
+
+Turn off the **Remote session** switch to watch Shorts, and on again afterwards. While it's off, the TV sees no connected device, the other entities are unavailable, and the setting survives a restart.
+
+```yaml
+action: switch.turn_off
+target:
+  entity_id: switch.youtube_on_samsung_neo_qled_remote_session
+```
 
 ## How it works
 
@@ -169,6 +183,7 @@ automation:
 
 - **Re-authentication requested:** YouTube occasionally rotates a TV's screen id (it did so for all TVs in April 2026). Open YouTube on the TV, then select **Reconfigure** on the integration in *Settings → Devices & services*. TVs added with a TV code ask for a new code.
 - **Not discovered:** discovery needs Home Assistant and the TV on the same network segment, with YouTube having been opened on the TV. Add it by IP address or TV code instead.
+- **Shorts won't play:** turn off the **Remote session** switch, which disconnects Home Assistant from the TV. See [Shorts](#shorts).
 - **Entities went unavailable for a while:** the integration keeps retrying on its own, waiting a little longer after each attempt, up to five minutes, so these usually clear up by themselves. The **YouTube session** sensor's history shows exactly when the connection dropped and returned, and a session that stays down for more than five minutes is logged as a warning with the reason.
 - **Debug logs:** add this to `configuration.yaml`:
 
