@@ -371,3 +371,25 @@ async def test_pair_with_rejected_code() -> None:
         api.pair.side_effect = KeyError("screen")
         with pytest.raises(InvalidPairingCode):
             await _async_pair_with_code("123456789012")
+
+
+async def test_pair_with_expired_code() -> None:
+    """YouTube answers an expired code with 404, not a connection problem."""
+    with patch(f"{FLOW}.YtLoungeApi") as api_class:
+        api = api_class.return_value.__aenter__.return_value
+        api.pair.side_effect = aiohttp.ClientResponseError(
+            request_info=None, history=(), status=404
+        )
+        with pytest.raises(InvalidPairingCode):
+            await _async_pair_with_code("123456789012")
+
+
+async def test_pair_server_error_is_not_a_bad_code() -> None:
+    """A server error stays a connection problem, so the user retries."""
+    with patch(f"{FLOW}.YtLoungeApi") as api_class:
+        api = api_class.return_value.__aenter__.return_value
+        api.pair.side_effect = aiohttp.ClientResponseError(
+            request_info=None, history=(), status=500
+        )
+        with pytest.raises(aiohttp.ClientResponseError):
+            await _async_pair_with_code("123456789012")

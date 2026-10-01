@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import hashlib
+from http import HTTPStatus
 from typing import Any
 from urllib.parse import urlparse
 
@@ -56,6 +57,12 @@ async def _async_pair_with_code(code: str) -> tuple[str, str | None]:
     async with YtLoungeApi(LOUNGE_DEVICE_NAME) as api:
         try:
             await api.pair(code)
+        except aiohttp.ClientResponseError as err:
+            # YouTube answers a wrong or expired code with 400 or 404, which
+            # the library surfaces while decoding the reply.
+            if err.status not in (HTTPStatus.BAD_REQUEST, HTTPStatus.NOT_FOUND):
+                raise
+            raise InvalidPairingCode from err
         except (KeyError, TypeError, ValueError) as err:
             raise InvalidPairingCode from err
         return api.auth.screen_id, api.screen_name
