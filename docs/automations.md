@@ -19,6 +19,8 @@ automation:
           entity_id: button.youtube_on_samsung_neo_qled_skip_ad
 ```
 
+This presses skip as soon as the TV offers it, usually five seconds in. It can't do more than the TV's own remote: an ad that YouTube doesn't let you skip still plays in full, so this isn't a replacement for Premium. Muting, below, covers those.
+
 ## Mute ads
 
 This also covers ads that can't be skipped. Volume belongs to the TV, so this uses the TV's own media player entity, not this integration's. Thanks to [Nik_Fiend](https://community.home-assistant.io/u/nik_fiend) for [the idea](https://community.home-assistant.io/t/youtube-on-tv-see-and-control-what-the-youtube-app-on-your-tv-is-playing/1026146/8):

@@ -19,6 +19,10 @@ The TV won't play Shorts while any device is connected to it as a remote — a p
 
 Turn off the **Remote session** switch to watch Shorts, and on again afterwards. While it's off, the TV sees no connected device, the other entities are unavailable, and the setting survives a restart. See [taking a Shorts break](automations.md#taking-a-shorts-break).
 
+## Ads
+
+The **Skip ad** button does what pressing skip on the remote does: it works once YouTube offers the skip, normally after five seconds, and only for ads that are skippable at all. Bumpers and other unskippable ads play in full, so the **Ad playing** sensor is the one to use for muting them.
+
 ## Playback details
 
 - While an ad plays, the position and duration are hidden, because the TV reports the ad's rather than the video's.
