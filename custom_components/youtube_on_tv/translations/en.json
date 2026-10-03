@@ -81,6 +81,18 @@
     },
     "queue_changed": {
       "message": "The queue changed on the TV. Try again."
+    },
+    "no_session": {
+      "message": "Nothing was watched yet, so there is nothing to resume."
+    },
+    "same_tv": {
+      "message": "Choose another TV to move the video to."
+    },
+    "not_a_tv": {
+      "message": "{entity_id} is not a YouTube on TV media player."
+    },
+    "tv_not_loaded": {
+      "message": "{entity_id} is not connected right now."
     }
   },
   "device": {
@@ -129,6 +141,9 @@
       },
       "video_quality": {
         "name": "Video quality"
+      },
+      "last_session": {
+        "name": "Last watched"
       }
     },
     "switch": {
@@ -160,6 +175,32 @@
     "todo": {
       "queue": {
         "name": "Queue"
+      }
+    }
+  },
+  "services": {
+    "resume": {
+      "name": "Resume last watched",
+      "description": "Plays the last watched video, with its queue, from where it stopped.",
+      "fields": {
+        "entity_id": {
+          "name": "TV",
+          "description": "The YouTube on TV media player to play it on. Default: the TV it was watched on."
+        }
+      }
+    },
+    "transfer": {
+      "name": "Move to another TV",
+      "description": "Moves the playing video, its position and the queue to another TV, then pauses the first one.",
+      "fields": {
+        "entity_id": {
+          "name": "From",
+          "description": "The YouTube on TV media player playing now."
+        },
+        "target": {
+          "name": "To",
+          "description": "The YouTube on TV media player to continue on."
+        }
       }
     }
   }

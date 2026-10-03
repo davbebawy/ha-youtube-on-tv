@@ -1,0 +1,21 @@
+resume:
+  fields:
+    entity_id:
+      selector:
+        entity:
+          integration: youtube_on_tv
+          domain: media_player
+transfer:
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          integration: youtube_on_tv
+          domain: media_player
+    target:
+      required: true
+      selector:
+        entity:
+          integration: youtube_on_tv
+          domain: media_player

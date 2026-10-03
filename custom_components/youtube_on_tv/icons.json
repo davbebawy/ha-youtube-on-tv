@@ -40,6 +40,9 @@
       },
       "video_quality": {
         "default": "mdi:high-definition"
+      },
+      "last_session": {
+        "default": "mdi:history"
       }
     },
     "switch": {
@@ -71,6 +74,14 @@
       "queue": {
         "default": "mdi:playlist-play"
       }
+    }
+  },
+  "services": {
+    "resume": {
+      "service": "mdi:play-circle"
+    },
+    "transfer": {
+      "service": "mdi:cast"
     }
   }
 }

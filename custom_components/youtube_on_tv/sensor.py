@@ -10,8 +10,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import YouTubeOnTvConfigEntry
-from .coordinator import YouTubeOnTvCoordinator
+from .coordinator import THUMBNAIL_URL, YouTubeOnTvCoordinator
 from .entity import YouTubeOnTvEntity
+from .session import DATA_SESSION, resume_position
 
 PARALLEL_UPDATES = 0
 
@@ -29,6 +30,7 @@ async def async_setup_entry(
         YouTubeOnTvUpNextSensor(coordinator),
         YouTubeOnTvSubtitlesSensor(coordinator),
         YouTubeOnTvVideoQualitySensor(coordinator),
+        YouTubeOnTvLastSessionSensor(coordinator),
     ]
     # The app state comes from DIAL, unknown for TVs added with a TV code.
     if coordinator.has_app_state:
@@ -136,3 +138,67 @@ class YouTubeOnTvVideoQualitySensor(YouTubeOnTvEntity, SensorEntity):
         """Return the resolutions the video offers."""
         levels = self.coordinator.data.video_quality_levels
         return {"available_levels": list(levels) if levels else None}
+
+
+class YouTubeOnTvLastSessionSensor(YouTubeOnTvEntity, SensorEntity):
+    """The video this TV played last, kept over restarts, to resume it.
+
+    The state is its title; the attributes hold the position, the queue and
+    a youtube.com link that starts at the position.
+    """
+
+    _attr_translation_key = "last_session"
+    _unrecorded_attributes = frozenset({"queue"})
+
+    def __init__(self, coordinator: YouTubeOnTvCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, "last_session")
+
+    async def async_added_to_hass(self) -> None:
+        """Follow the session."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self.hass.data[DATA_SESSION].async_add_listener(self.async_write_ha_state)
+        )
+
+    @property
+    def available(self) -> bool:
+        """Stay available: the last session is known while the TV is away."""
+        return True
+
+    @property
+    def _session(self) -> dict[str, Any] | None:
+        return self.hass.data[DATA_SESSION].tvs.get(
+            self.coordinator.config_entry.entry_id
+        )
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the video's title."""
+        session = self._session
+        if session is None:
+            return None
+        return (session.get("title") or session["video_id"])[:255]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return where the session stopped."""
+        session = self._session
+        if session is None:
+            return None
+        position = round(resume_position(session))
+        video_id = session["video_id"]
+        queue = session.get("queue") or []
+        index = session.get("queue_index")
+        return {
+            "video_id": video_id,
+            "channel": session.get("channel"),
+            "thumbnail": THUMBNAIL_URL.format(video_id=video_id),
+            "position": position,
+            "duration": round(session["duration"]) if session.get("duration") else None,
+            "playing": session.get("stopped_at") is None,
+            "stopped_at": session.get("stopped_at"),
+            "queue": queue,
+            "queue_left": len(queue) - index - 1 if index is not None else 0,
+            "url": f"https://www.youtube.com/watch?v={video_id}&t={position}s",
+        }

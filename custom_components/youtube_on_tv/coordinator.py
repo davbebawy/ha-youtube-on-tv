@@ -321,6 +321,11 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         return self._app_running
 
     @property
+    def last_event_at(self) -> datetime | None:
+        """Return when the TV last sent a playback event."""
+        return self._last_event_at
+
+    @property
     def has_app_state(self) -> bool:
         """Return True if the TV's DIAL endpoint is known and polled."""
         return self._app_url is not None
@@ -969,6 +974,9 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
     def handle_disconnected(self) -> None:
         """Handle the TV ending the session (e.g. YouTube sent to background)."""
         LOGGER.debug("%s ended the lounge session", self.config_entry.title)
+        # The TV played until it ended the session; the last session's
+        # position is extrapolated to here.
+        self._last_event_at = dt_util.utcnow()
         self._update(self._cleared(PlayerStatus.OFF), immediate=True)
 
     async def _async_check_stale(self, _now: datetime | None = None) -> None:
