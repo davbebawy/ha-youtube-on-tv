@@ -1,6 +1,7 @@
 {
   "domain": "youtube_on_tv",
   "name": "YouTube on TV",
+  "after_dependencies": ["media_source"],
   "codeowners": ["@jorgediez"],
   "config_flow": true,
   "dependencies": ["ssdp"],

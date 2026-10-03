@@ -112,6 +112,12 @@
     },
     "open_timeout": {
       "message": "YouTube didn't come online on the TV within {seconds} seconds after the open actions ran."
+    },
+    "invalid_video_list": {
+      "message": "\"{media_id}\" is not a comma list of YouTube video ids."
+    },
+    "invalid_list_id": {
+      "message": "\"{list_id}\" is not a YouTube list id."
     }
   },
   "device": {
