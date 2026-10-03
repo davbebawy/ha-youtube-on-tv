@@ -93,6 +93,29 @@ The **Queue** to-do list shows the same queue, including videos queued from a ph
 
 The playing video can't be moved or deleted, and a video dragged above it plays next instead. Reordering and deleting need a video playing, because the TV reloads the queue at the current position.
 
+## Play a list of videos
+
+With `media_content_type: playlist`, `media_content_id` is a comma list of video ids. They go to the TV as one queue, in one command, which is much faster than adding them one by one:
+
+```yaml
+action: media_player.play_media
+target:
+  entity_id: media_player.youtube_on_samsung_neo_qled
+data:
+  media_content_type: playlist
+  media_content_id: dQw4w9WgXcQ,jNQXAC9IVRw,9bZkp7q19f0
+  extra:
+    list_id: RDdQw4w9WgXcQ
+```
+
+- With no `enqueue`, or `play` or `replace`, the list replaces the queue and plays from its first video.
+- `add` appends the list to the queue, `next` puts it after the playing video; the playing video keeps playing.
+- `extra.list_id` is optional: the id of the Mix or playlist the videos came from. The TV gets it with the new queue and, for a Mix, keeps the Mix going after the last video, as it does when the phone app casts one. It is ignored with `add` and `next`, since the TV's queue keeps its own id.
+
+The integration doesn't read a Mix or playlist itself: sending a list id alone starts its first video on the TV, but the TV then reports no queue, and it isn't clear that it stays in the Mix. Another integration that knows the videos (for example from a YouTube account) can pass them as a list.
+
+`media-source://` ids work too: a media source that resolves to a video id plays it, and one that resolves with the media type `playlist` plays its comma list of ids.
+
 ## Taking a Shorts break
 
 The TV won't play Shorts while Home Assistant is connected to it; see [Shorts](behavior.md#shorts). The **Remote session** switch disconnects on demand.

@@ -81,6 +81,12 @@
     },
     "queue_changed": {
       "message": "The queue changed on the TV. Try again."
+    },
+    "invalid_video_list": {
+      "message": "\"{media_id}\" is not a comma list of YouTube video ids."
+    },
+    "invalid_list_id": {
+      "message": "\"{list_id}\" is not a YouTube list id."
     }
   },
   "device": {

@@ -7,8 +7,10 @@ import re
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from homeassistant.components import media_source
 from homeassistant.components.media_player import (
     ATTR_MEDIA_ENQUEUE,
+    ATTR_MEDIA_EXTRA,
     MediaPlayerDeviceClass,
     MediaPlayerEnqueue,
     MediaPlayerEntity,
@@ -28,6 +30,9 @@ from .entity import YouTubeOnTvEntity
 PARALLEL_UPDATES = 1
 
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+# A YouTube list id: a Mix (RD...), a playlist (PL...) or another kind.
+_LIST_ID_RE = re.compile(r"^[A-Za-z0-9_-]{2,64}$")
+ATTR_LIST_ID = "list_id"
 _YOUTUBE_HOSTS = {"youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"}
 
 _STATES = {
@@ -144,7 +149,23 @@ class YouTubeOnTvMediaPlayer(YouTubeOnTvEntity, MediaPlayerEntity):
 
         enqueue "add" appends it to the queue, "next" plays it after the
         current video, "replace" clears the queue; "play" or none plays it now.
+        A media type of "playlist" takes a comma list of video ids instead.
         """
+        if media_source.is_media_source_id(media_id):
+            # A media source (another integration's media browser) resolves
+            # to a video id, or to a comma list of ids for a playlist.
+            resolved = await media_source.async_resolve_media(
+                self.hass, media_id, self.entity_id
+            )
+            media_id = resolved.url
+            media_type = (
+                MediaType.PLAYLIST
+                if resolved.mime_type == MediaType.PLAYLIST
+                else MediaType.VIDEO
+            )
+        if media_type == MediaType.PLAYLIST:
+            await self._async_play_video_list(media_id, **kwargs)
+            return
         video_id = parse_video_id(media_id)
         if video_id is None:
             raise ServiceValidationError(
@@ -168,6 +189,37 @@ class YouTubeOnTvMediaPlayer(YouTubeOnTvEntity, MediaPlayerEntity):
             await self.coordinator.async_command(
                 self.coordinator.api.play_video, video_id
             )
+
+    async def _async_play_video_list(self, media_id: str, **kwargs: Any) -> None:
+        """Play or queue a comma list of video ids as one queue.
+
+        The list goes to the TV as one setPlaylist, which is much faster than
+        one addVideo per video. With a list id in extra (a Mix or playlist
+        the ids came from), the TV keeps the Mix going after the last video,
+        as it does when the phone app casts one.
+        """
+        video_ids = parse_video_list(media_id)
+        if video_ids is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_video_list",
+                translation_placeholders={"media_id": media_id},
+            )
+        extra = kwargs.get(ATTR_MEDIA_EXTRA) or {}
+        list_id = str(extra.get(ATTR_LIST_ID) or "")
+        if list_id and not _LIST_ID_RE.match(list_id):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_list_id",
+                translation_placeholders={"list_id": list_id},
+            )
+        enqueue = kwargs.get(ATTR_MEDIA_ENQUEUE)
+        if enqueue in (MediaPlayerEnqueue.ADD, MediaPlayerEnqueue.NEXT):
+            await self.coordinator.async_queue_extend(
+                video_ids, after_current=enqueue == MediaPlayerEnqueue.NEXT
+            )
+        else:
+            await self.coordinator.async_play_list(video_ids, list_id=list_id)
 
     async def async_turn_on(self) -> None:
         """Open YouTube on the TV."""
@@ -194,3 +246,11 @@ def parse_video_id(media_id: str) -> str | None:
     else:
         candidate = parse_qs(url.query).get("v", [""])[0]
     return candidate if _VIDEO_ID_RE.match(candidate) else None
+
+
+def parse_video_list(media_id: str) -> list[str] | None:
+    """Return the video ids of a comma list, or None if one isn't an id."""
+    video_ids = [part.strip() for part in media_id.split(",") if part.strip()]
+    if not video_ids or not all(_VIDEO_ID_RE.match(v) for v in video_ids):
+        return None
+    return video_ids

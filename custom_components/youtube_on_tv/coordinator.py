@@ -680,6 +680,27 @@ class YouTubeOnTvCoordinator(DataUpdateCoordinator[TvState]):
         )
         self._note_queue(tuple(video_ids), index)
 
+    async def async_queue_extend(
+        self, video_ids: list[str], *, after_current: bool
+    ) -> None:
+        """Queue several videos at the end, or after the playing one.
+
+        Sent as one new queue, so the playing video keeps playing.
+        """
+        state = self._state
+        if state.video_id is None:
+            await self.async_play_list(video_ids)
+            return
+        if not state.queue or state.queue_index is None:
+            # Playing with no queue known: the playing video heads the new
+            # queue, so it keeps playing.
+            await self.async_queue_set([state.video_id, *video_ids], 0)
+            return
+        queue = list(state.queue)
+        at = state.queue_index + 1 if after_current else len(queue)
+        queue[at:at] = video_ids
+        await self.async_queue_set(queue, state.queue_index)
+
     async def async_ensure_running(self, video_id: str) -> None:
         """Open YouTube on the TV if it's closed, so a command reaches it.
 
