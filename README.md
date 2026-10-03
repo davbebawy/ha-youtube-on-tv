@@ -11,7 +11,7 @@ It connects to the TV the same way the YouTube phone app does when you cast (You
 
 > **Not affiliated with Google or YouTube.** This uses an undocumented protocol that YouTube may change at any time.
 
-Questions, ideas and reports of how it behaves on other TVs are welcome in the [Home Assistant community thread](https://community.home-assistant.io/t/youtube-on-tv-see-and-control-what-the-youtube-app-on-your-tv-is-playing/1026146). Bugs are best filed as [issues](https://github.com/jorgediez/ha-youtube-on-tv/issues).
+Questions, ideas and reports of how it behaves on other TVs are welcome in the [Home Assistant community thread](https://community.home-assistant.io/t/youtube-on-tv-see-and-control-what-the-youtube-app-on-your-tv-is-playing/1026146). Bugs are best filed as [issues](https://github.com/jorgediez/ha-youtube-on-tv/issues), and [CONTRIBUTING](https://github.com/jorgediez/ha-youtube-on-tv/blob/main/CONTRIBUTING.md) says what makes a report useful and what belongs in the integration.
 
 ## Features
 
