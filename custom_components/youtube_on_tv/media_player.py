@@ -68,12 +68,21 @@ class YouTubeOnTvMediaPlayer(YouTubeOnTvEntity, MediaPlayerEntity):
     def __init__(self, coordinator: YouTubeOnTvCoordinator) -> None:
         """Initialize the media player."""
         super().__init__(coordinator, "media_player")
-        if coordinator.has_app_state:
+
+    @property
+    def supported_features(self) -> MediaPlayerEntityFeature:
+        """Return the features; turning on and off depends on how the TV opens."""
+        features = self._attr_supported_features
+        if self.coordinator.has_app_state:
             # Opening and closing the app is done over DIAL, so it needs the
             # TV's address, which a TV added with a code doesn't have.
-            self._attr_supported_features |= (
+            features |= (
                 MediaPlayerEntityFeature.TURN_ON | MediaPlayerEntityFeature.TURN_OFF
             )
+        elif self.coordinator.open_actions:
+            # A TV added with a code opens through the actions in its options.
+            features |= MediaPlayerEntityFeature.TURN_ON
+        return features
 
     @property
     def state(self) -> MediaPlayerState:
@@ -157,6 +166,7 @@ class YouTubeOnTvMediaPlayer(YouTubeOnTvEntity, MediaPlayerEntity):
             # YouTube's servers and never reach the TV, so open the app on it.
             await self.coordinator.async_launch(video_id)
             return
+        await self.coordinator.async_open_if_closed()
         enqueue = kwargs.get(ATTR_MEDIA_ENQUEUE)
         if enqueue == MediaPlayerEnqueue.ADD:
             await self.coordinator.async_queue_add(video_id)
@@ -171,7 +181,10 @@ class YouTubeOnTvMediaPlayer(YouTubeOnTvEntity, MediaPlayerEntity):
 
     async def async_turn_on(self) -> None:
         """Open YouTube on the TV."""
-        await self.coordinator.async_launch()
+        if self.coordinator.has_app_state:
+            await self.coordinator.async_launch()
+        else:
+            await self.coordinator.async_open()
 
     async def async_turn_off(self) -> None:
         """Close YouTube on the TV."""
