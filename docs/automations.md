@@ -152,6 +152,24 @@ The integration doesn't read a Mix or playlist itself: sending a list id alone s
 
 `media-source://` ids work too: a media source that resolves to a video id plays it, and one that resolves with the media type `playlist` plays its comma list of ids.
 
+## Resume and move playback
+
+Two actions work across TVs:
+
+| Action | Effect |
+|---|---|
+| `youtube_on_tv.resume` | Plays the last watched video, with its queue, from where it stopped. By default on the TV it was watched on; `entity_id` picks another. |
+| `youtube_on_tv.transfer` | Moves the playing video, its position and the queue from `entity_id` to `target`, then pauses the first TV. |
+
+```yaml
+action: youtube_on_tv.transfer
+data:
+  entity_id: media_player.youtube_on_living_room_tv
+  target: media_player.youtube_on_bedroom_tv
+```
+
+The last session is kept over Home Assistant restarts. When a TV stops without saying so, the position is taken from the last time it reported, not from when Home Assistant noticed. Each TV's **Last watched** sensor shows its own last video.
+
 ## Taking a Shorts break
 
 The TV won't play Shorts while Home Assistant is connected to it; see [Shorts](behavior.md#shorts). The **Remote session** switch disconnects on demand.

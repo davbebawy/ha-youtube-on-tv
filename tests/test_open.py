@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pyytlounge import NowPlayingEvent, State
@@ -219,3 +219,36 @@ async def test_reconnect_wait_cut_short_after_opening(
     coordinator._reconnect_now.set()
     async with asyncio.timeout(1):
         await wait
+
+
+async def test_resume_opens_the_app_first(
+    hass: HomeAssistant, mock_lounge: list[FakeLounge], mock_app_state: AsyncMock
+) -> None:
+    """With the app offline, resume runs the open actions, waits, then plays."""
+    entry, api = await _setup_code_tv(
+        hass, mock_lounge, {CONF_OPEN_ACTIONS: OPEN_ACTIONS}
+    )
+    calls = _register_opener(hass, api, online=True)
+    await api.listener.now_playing_changed(
+        NowPlayingEvent(
+            {
+                "videoId": B,
+                "currentTime": "100",
+                "duration": "600",
+                "state": str(State.Playing.value),
+            }
+        )
+    )
+    entry.runtime_data.handle_queue({"mdxExpandedReceiverVideoIdList": f"{A},{B}"})
+    await hass.async_block_till_done()
+    await api.listener.disconnected(MagicMock())
+    await hass.async_block_till_done()
+    assert hass.states.get(CODE_PLAYER).state == "off"
+
+    with patch(POLL, 0.01):
+        await hass.services.async_call(DOMAIN, "resume", {}, blocking=True)
+
+    assert len(calls) == 1
+    args = api.set_playlist.await_args.args
+    assert args[0] == [A, B]
+    assert args[1] == 1
